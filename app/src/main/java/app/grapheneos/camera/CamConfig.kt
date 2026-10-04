@@ -406,6 +406,67 @@ class CamConfig(private val mActivity: MainActivity) {
         .requireLensFacing(DEFAULT_LENS_FACING)
         .build()
 
+    // Id of the rear lens picked by the user (null = the camera CameraX picks by default).
+    private var rearCameraId: String? = null
+
+    private class RearLens(val id: String, val focalLength: Float)
+
+    @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
+    private fun buildCameraSelector(): CameraSelector {
+        val builder = CameraSelector.Builder().requireLensFacing(lensFacing)
+        val id = rearCameraId
+        if (id != null && lensFacing == CameraSelector.LENS_FACING_BACK) {
+            builder.addCameraFilter { infos ->
+                infos.filter { Camera2CameraInfo.from(it).cameraId == id }
+            }
+        }
+        return builder.build()
+    }
+
+    // Rear lenses with distinct focal lengths, shortest first. Logical cameras and vendor
+    // duplicates of the main lens share its focal length, so they are dropped.
+    @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
+    private fun rearLenses(provider: ProcessCameraProvider, defaultId: String): List<RearLens> {
+        return provider.availableCameraInfos
+            .mapNotNull {
+                val c2 = Camera2CameraInfo.from(it)
+                if (c2.getCameraCharacteristic(CameraCharacteristics.LENS_FACING)
+                    != CameraCharacteristics.LENS_FACING_BACK
+                ) return@mapNotNull null
+                val focal = c2.getCameraCharacteristic(
+                    CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS
+                )?.firstOrNull() ?: return@mapNotNull null
+                RearLens(c2.cameraId, focal)
+            }
+            .sortedBy { it.id != defaultId }
+            .distinctBy { it.focalLength }
+            .sortedBy { it.focalLength }
+    }
+
+    @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
+    fun cycleRearLens() {
+        val provider = cameraProvider ?: return
+        if (lensFacing != CameraSelector.LENS_FACING_BACK) return
+
+        val defaultId = try {
+            Camera2CameraInfo.from(provider.getCameraInfo(REAR_CAMERA_SELECTOR)).cameraId
+        } catch (exception: IllegalArgumentException) {
+            Log.w(TAG, "Unable to resolve the default rear camera", exception)
+            return
+        }
+
+        val lenses = rearLenses(provider, defaultId)
+        if (lenses.size < 2) return
+
+        val current = lenses.indexOfFirst { it.id == (rearCameraId ?: defaultId) }
+        val next = lenses[(current + 1) % lenses.size]
+        // The default lens goes back to null so that extensions stay available for it.
+        rearCameraId = if (next.id == defaultId) null else next.id
+
+        mActivity.showMessage(mActivity.getString(R.string.rear_lens_selected, next.focalLength))
+        startCamera(true)
+    }
+
     var gridType: GridType = SettingValues.Default.GRID_TYPE
         set(value) {
             val editor = commonPref.edit()
@@ -1479,9 +1540,7 @@ class CamConfig(private val mActivity: MainActivity) {
         }
 
 
-        cameraSelector = CameraSelector.Builder()
-            .requireLensFacing(lensFacing)
-            .build()
+        cameraSelector = buildCameraSelector()
 
         val builder = ImageCapture.Builder()
 
@@ -1496,7 +1555,9 @@ class CamConfig(private val mActivity: MainActivity) {
         var appliedExtension: Pair<Int, Int>? = null
         if (extMode != ExtensionMode.NONE) {
             val em = extensionsManager
-            if (em != null && isExtensionUsable(cameraSelector, lensFacing, extMode)) {
+            if (em != null && (rearCameraId == null || lensFacing != CameraSelector.LENS_FACING_BACK)
+                && isExtensionUsable(cameraSelector, lensFacing, extMode)
+            ) {
                 appliedExtension = lensFacing to extMode
                 cameraSelector = em.getExtensionEnabledCameraSelector(cameraSelector, extMode)
             } else {
