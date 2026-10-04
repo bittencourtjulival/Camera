@@ -828,6 +828,10 @@ open class MainActivity : AppCompatActivity(),
                     val dif = System.currentTimeMillis() - tapDownTimestamp
                     if (dif < 300) {
                         flipCameraCircle.performClick()
+                    } else if (!camConfig.isQRMode && !videoCapturer.isRecording) {
+                        // Long press: cycle through the rear lenses (ultra-wide, macro, main)
+                        resetAutoSleep()
+                        camConfig.cycleRearLens()
                     }
 
                     tapDownTimestamp = 0

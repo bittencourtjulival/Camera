@@ -165,6 +165,7 @@
     <string name="no_barcode_selected">Please ensure that at least one barcode is selected in manual mode</string>
     <string name="flash_unavailable_in_selected_mode">Flash is unavailable for the current mode.</string>
     <string name="front_camera_unavailable">Could not detect front camera. Please try again later!</string>
+    <string name="rear_lens_selected" translatable="false">Lens: %1$.2f mm</string>
     <string name="rear_camera_unavailable">Could not detect rear camera. Please try again later!</string>
     <string name="qr_rear_camera_unavailable">The rear camera seems to be unavailable. Using front camera for QR mode instead.</string>
     <string name="folder_not_found">Storage location not found</string>
